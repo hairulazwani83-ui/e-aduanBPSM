@@ -1,0 +1,241 @@
+// Sistem eAduan Kerosakan ICT - ADTEC JTM Kampus Pasir Gudang
+// Prisma Schema (SQLite for development; production would use PostgreSQL via Supabase)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== User / Profile ====================
+model Profile {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  fullName     String
+  staffId      String
+  department   String
+  phone        String?
+  role         String   @default("reporter") // reporter | technician | admin | management
+  isActive     Boolean  @default(true)
+  failedLoginAttempts Int @default(0)
+  lockedUntil  DateTime?
+  lastLoginAt  DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  complaints           Complaint[]     @relation("ReporterComplaints")
+  assignedComplaints   Complaint[]     @relation("TechnicianComplaints")
+  workLogs             WorkLog[]
+  statusChanges        StatusHistory[] @relation("StatusChanges")
+  suggestions          Suggestion[]
+  auditLogs            AuditLog[]
+  notifications        Notification[]
+  ratingGiven          ComplaintRating[]
+
+  @@index([role])
+  @@index([department])
+}
+
+// ==================== Equipment Types ====================
+model EquipmentType {
+  id        String  @id @default(cuid())
+  code      String  @unique // EQ-01, EQ-02, ...
+  name      String
+  icon      String  @default("Monitor")
+  isActive  Boolean @default(true)
+  createdAt DateTime @default(now())
+
+  assets     Asset[]
+  complaints Complaint[]
+
+  @@index([isActive])
+}
+
+// ==================== Damage Categories ====================
+model DamageCategory {
+  id              String  @id @default(cuid())
+  name            String
+  description     String?
+  defaultPriority String  @default("Sederhana") // Rendah | Sederhana | Tinggi | Kritikal
+  isActive        Boolean @default(true)
+  createdAt       DateTime @default(now())
+
+  complaints Complaint[]
+
+  @@index([isActive])
+}
+
+// ==================== Assets (ICT equipment records) ====================
+model Asset {
+  id               String       @id @default(cuid())
+  assetTag         String       @unique
+  equipmentTypeId  String
+  brandModel       String
+  location         String
+  purchaseDate     DateTime?
+  status           String       @default("Aktif") // Aktif | Rosak | Dilupus
+  notes            String?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  equipmentType EquipmentType @relation(fields: [equipmentTypeId], references: [id])
+  complaints    Complaint[]
+
+  @@index([equipmentTypeId])
+  @@index([status])
+  @@index([location])
+}
+
+// ==================== Complaints (tickets) ====================
+model Complaint {
+  id                  String    @id @default(cuid())
+  ticketNo            String    @unique // ADT-PG-YYYYMM-XXXX
+  reporterId          String
+  equipmentTypeId     String
+  assetId             String?
+  damageCategoryId    String
+  description         String
+  aiSuggestedCategory String?
+  aiSuggestedPriority String?
+  aiSolution          String?
+  priority            String    @default("Sederhana") // Rendah | Sederhana | Tinggi | Kritikal
+  location            String
+  status              String    @default("Baru") // Baru | Ditugaskan | Dalam Tindakan | On Hold | Selesai | Ditutup
+  assignedTo          String?
+  attachmentUrl       String?
+  reporterRating      Int?
+  reporterFeedback    String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  assignedAt          DateTime?
+  resolvedAt          DateTime?
+  closedAt            DateTime?
+
+  reporter        Profile        @relation("ReporterComplaints", fields: [reporterId], references: [id])
+  technician      Profile?       @relation("TechnicianComplaints", fields: [assignedTo], references: [id])
+  equipmentType   EquipmentType  @relation(fields: [equipmentTypeId], references: [id])
+  asset           Asset?         @relation(fields: [assetId], references: [id])
+  damageCategory  DamageCategory @relation(fields: [damageCategoryId], references: [id])
+  workLogs        WorkLog[]
+  statusHistory   StatusHistory[]
+  ratings         ComplaintRating[]
+
+  @@index([status])
+  @@index([priority])
+  @@index([reporterId])
+  @@index([assignedTo])
+  @@index([createdAt])
+  @@index([equipmentTypeId])
+  @@index([damageCategoryId])
+}
+
+// ==================== Work Logs (maintenance work & costs) ====================
+model WorkLog {
+  id           String   @id @default(cuid())
+  complaintId  String
+  technicianId String
+  actionTaken  String
+  cost         Float    @default(0)
+  spareParts   String?
+  loggedAt     DateTime @default(now())
+
+  complaint  Complaint @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+  technician Profile   @relation(fields: [technicianId], references: [id])
+
+  @@index([complaintId])
+  @@index([technicianId])
+  @@index([loggedAt])
+}
+
+// ==================== Status History (audit trail) ====================
+model StatusHistory {
+  id          String   @id @default(cuid())
+  complaintId String
+  oldStatus   String?
+  newStatus   String
+  changedById String
+  note        String?
+  changedAt   DateTime @default(now())
+
+  complaint Complaint @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+  changedBy Profile   @relation("StatusChanges", fields: [changedById], references: [id])
+
+  @@index([complaintId])
+  @@index([changedAt])
+}
+
+// ==================== Suggestions (user feedback) ====================
+model Suggestion {
+  id            String   @id @default(cuid())
+  submittedById String
+  subject       String
+  message       String
+  category      String   @default("Umum") // Umum | Peningkatan | Aduan Perkhidmatan
+  adminResponse String?
+  status        String   @default("Baru") // Baru | Dalam Semakan | Dijawab
+  createdAt     DateTime @default(now())
+  respondedAt   DateTime?
+
+  submittedBy Profile @relation(fields: [submittedById], references: [id])
+
+  @@index([status])
+  @@index([submittedById])
+}
+
+// ==================== Notifications ====================
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  message   String
+  type      String   @default("info") // info | success | warning | error
+  isRead    Boolean  @default(false)
+  link      String?
+  createdAt DateTime @default(now())
+
+  user Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+  @@index([createdAt])
+}
+
+// ==================== Complaint Ratings ====================
+model ComplaintRating {
+  id           String   @id @default(cuid())
+  complaintId  String
+  userId       String
+  rating       Int // 1-5
+  feedback     String?
+  createdAt    DateTime @default(now())
+
+  complaint Complaint @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+  user      Profile   @relation(fields: [userId], references: [id])
+
+  @@unique([complaintId, userId])
+  @@index([complaintId])
+}
+
+// ==================== Audit Log (security & integrity) ====================
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  action    String // e.g. LOGIN, LOGOUT, CREATE_COMPLAINT, UPDATE_STATUS, DELETE_USER
+  entity    String?
+  entityId  String?
+  details   String?
+  ipAddress String?
+  userAgent String?
+  severity  String   @default("info") // info | warning | critical
+  createdAt DateTime @default(now())
+
+  user Profile? @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+  @@index([severity])
+}
