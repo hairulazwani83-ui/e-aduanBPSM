@@ -67,3 +67,12 @@ tool-results/
 
 # Downloaded screenshots (generated, not source)
 /download/
+
+# Sandbox-only configs (not part of project source)
+/Caddyfile
+/examples/
+/mini-services/
+/tool-results/
+
+# Uploaded PRD/source documents (kept locally, not in repo)
+/upload/
