@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requireAuth } from '@/lib/security'
+import { ComplaintStatus } from '@prisma/client'
+import { fromComplaintStatus, fromPriority, fromAssetStatus } from '@/lib/enum-converters'
 
-// GET monthly report data (used by frontend to render report and PDF)
+// GET monthly report data
 export async function GET(req: NextRequest) {
   try {
     const { user, error } = await requireAuth(['admin', 'management'])
@@ -25,7 +27,6 @@ export async function GET(req: NextRequest) {
       startDate = new Date(y, m - 1, 1)
       endDate = new Date(y, m, 1)
     } else {
-      // Default to current month
       const now = new Date()
       startDate = new Date(now.getFullYear(), now.getMonth(), 1)
       endDate = new Date(now.getFullYear(), now.getMonth() + 1, 1)
@@ -67,11 +68,11 @@ export async function GET(req: NextRequest) {
         where: { loggedAt: { gte: startDate, lte: endDate } },
         _sum: { cost: true },
       }),
-      db.complaint.count({ where: { createdAt: { gte: startDate, lte: endDate }, status: 'Selesai' } }),
-      db.complaint.count({ where: { createdAt: { gte: startDate, lte: endDate }, status: 'Ditutup' } }),
-      db.complaint.count({ where: { createdAt: { gte: startDate, lte: endDate }, status: 'Baru' } }),
-      db.complaint.count({ where: { createdAt: { gte: startDate, lte: endDate }, status: { in: ['Ditugaskan', 'Dalam Tindakan'] } } }),
-      db.complaint.count({ where: { createdAt: { gte: startDate, lte: endDate }, status: 'On Hold' } }),
+      db.complaint.count({ where: { createdAt: { gte: startDate, lte: endDate }, status: ComplaintStatus.SELESAI } }),
+      db.complaint.count({ where: { createdAt: { gte: startDate, lte: endDate }, status: ComplaintStatus.DITUTUP } }),
+      db.complaint.count({ where: { createdAt: { gte: startDate, lte: endDate }, status: ComplaintStatus.BARU } }),
+      db.complaint.count({ where: { createdAt: { gte: startDate, lte: endDate }, status: { in: [ComplaintStatus.DITUGASKAN, ComplaintStatus.DALAM_TINDAKAN] } } }),
+      db.complaint.count({ where: { createdAt: { gte: startDate, lte: endDate }, status: ComplaintStatus.ON_HOLD } }),
     ])
 
     // Calculate avg resolution time
@@ -82,16 +83,26 @@ export async function GET(req: NextRequest) {
       avgResHrs = total / resolved.length
     }
 
+    // Serialize complaint enums
+    const serializedComplaints = complaints.map((c) => ({
+      ...c,
+      status: fromComplaintStatus(c.status),
+      priority: fromPriority(c.priority),
+      damageCategory: c.damageCategory ? { ...c.damageCategory, defaultPriority: fromPriority(c.damageCategory.defaultPriority) } : c.damageCategory,
+      asset: c.asset ? { ...c.asset, status: fromAssetStatus(c.asset.status) } : c.asset,
+      workLogs: c.workLogs.map((w) => ({ ...w, cost: Number(w.cost) })),
+    }))
+
     // Group by equipment type
     const byEquipment: Record<string, { count: number; cost: number }> = {}
     const byDamage: Record<string, number> = {}
     const byLocation: Record<string, number> = {}
     const byPriority: Record<string, number> = {}
-    complaints.forEach((c) => {
+    serializedComplaints.forEach((c) => {
       const eq = c.equipmentType.name
       byEquipment[eq] = byEquipment[eq] || { count: 0, cost: 0 }
       byEquipment[eq].count++
-      byEquipment[eq].cost += c.workLogs.reduce((s, w) => s + w.cost, 0)
+      byEquipment[eq].cost += c.workLogs.reduce((s: number, w: any) => s + Number(w.cost), 0)
       byDamage[c.damageCategory.name] = (byDamage[c.damageCategory.name] || 0) + 1
       byLocation[c.location] = (byLocation[c.location] || 0) + 1
       byPriority[c.priority] = (byPriority[c.priority] || 0) + 1
@@ -110,15 +121,15 @@ export async function GET(req: NextRequest) {
         onHoldCount,
         resolvedCount,
         closedCount,
-        totalCost: totalCost._sum.cost || 0,
+        totalCost: Number(totalCost._sum.cost || 0),
         avgResolutionHours: Math.round(avgResHrs * 10) / 10,
       },
       byEquipment: Object.entries(byEquipment).map(([name, v]) => ({ name, count: v.count, cost: v.cost })),
       byDamage: Object.entries(byDamage).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count),
       byLocation: Object.entries(byLocation).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count),
       byPriority: Object.entries(byPriority).map(([name, count]) => ({ name, count })),
-      complaints,
-      workLogs,
+      complaints: serializedComplaints,
+      workLogs: workLogs.map((w) => ({ ...w, cost: Number(w.cost) })),
     })
   } catch (e: any) {
     console.error('GET /api/reports/monthly error:', e)

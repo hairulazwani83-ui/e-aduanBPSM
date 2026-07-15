@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requireAuth, sanitizeString, logAudit, getClientIp } from '@/lib/security'
+import { ComplaintStatus, Severity } from '@prisma/client'
 
 // POST: Rate a resolved/closed complaint
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -26,7 +27,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: 'Hanya pelapor asal boleh memberi rating.' }, { status: 403 })
     }
 
-    if (!['Selesai', 'Ditutup'].includes(complaint.status)) {
+    // Check status (compare enum)
+    if (![ComplaintStatus.SELESAI, ComplaintStatus.DITUTUP].includes(complaint.status)) {
       return NextResponse.json({ error: 'Tiket belum selesai. Tidak boleh rating lagi.' }, { status: 400 })
     }
 
@@ -53,13 +55,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     // Also update complaint itself for quick access
+    // Auto-close if status was Selesai
+    const shouldClose = complaint.status === ComplaintStatus.SELESAI
     await db.complaint.update({
       where: { id },
       data: {
         reporterRating: rating,
         reporterFeedback: feedback ? sanitizeString(feedback, 1000) : null,
-        // Auto-close if status was Selesai
-        ...(complaint.status === 'Selesai' ? { status: 'Ditutup', closedAt: new Date() } : {}),
+        ...(shouldClose ? { status: ComplaintStatus.DITUTUP, closedAt: new Date() } : {}),
       },
     })
 
@@ -70,7 +73,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       entityId: id,
       details: `Rating ${rating}/5 diberikan untuk ${complaint.ticketNo}`,
       ipAddress: getClientIp(req),
-      severity: 'info',
+      severity: Severity.INFO,
     })
 
     return NextResponse.json({ success: true, rating: ratingRecord })

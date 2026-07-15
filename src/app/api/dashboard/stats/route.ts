@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requireAuth } from '@/lib/security'
+import { ComplaintStatus, Priority, Role } from '@prisma/client'
+import { fromComplaintStatus, fromPriority, fromRole } from '@/lib/enum-converters'
 
 // GET: Dashboard statistics - aggregated data
 export async function GET(req: NextRequest) {
@@ -14,11 +16,10 @@ export async function GET(req: NextRequest) {
     const now = new Date()
     const startRange = new Date(now.getFullYear(), now.getMonth() - (monthsBack - 1), 1)
 
-    // Base filter
     const baseFilter: any = { createdAt: { gte: startRange } }
-
+    const userRole = user!.role as string
     // For technicians, filter to their assigned
-    if (user!.role === 'technician') {
+    if (userRole === 'technician') {
       baseFilter.OR = [{ assignedTo: user!.id }, { reporterId: user!.id }]
     }
 
@@ -37,7 +38,6 @@ export async function GET(req: NextRequest) {
       totalUsers,
       totalReporters,
       totalTechnicians,
-      avgResolutionHours,
       recentComplaints,
       monthlyData,
       complaintsByEquipment,
@@ -48,24 +48,22 @@ export async function GET(req: NextRequest) {
       ratingAvg,
     ] = await Promise.all([
       db.complaint.count({ where: baseFilter }),
-      db.complaint.count({ where: { ...baseFilter, status: 'Baru' } }),
-      db.complaint.count({ where: { ...baseFilter, status: { in: ['Ditugaskan', 'Dalam Tindakan'] } } }),
-      db.complaint.count({ where: { ...baseFilter, status: 'Selesai' } }),
-      db.complaint.count({ where: { ...baseFilter, status: 'Ditutup' } }),
-      db.complaint.count({ where: { ...baseFilter, status: 'On Hold' } }),
+      db.complaint.count({ where: { ...baseFilter, status: ComplaintStatus.BARU } }),
+      db.complaint.count({ where: { ...baseFilter, status: { in: [ComplaintStatus.DITUGASKAN, ComplaintStatus.DALAM_TINDAKAN] } } }),
+      db.complaint.count({ where: { ...baseFilter, status: ComplaintStatus.SELESAI } }),
+      db.complaint.count({ where: { ...baseFilter, status: ComplaintStatus.DITUTUP } }),
+      db.complaint.count({ where: { ...baseFilter, status: ComplaintStatus.ON_HOLD } }),
       db.workLog.count(),
       db.workLog.aggregate({ _sum: { cost: true } }),
       db.asset.count(),
-      db.asset.count({ where: { status: 'Aktif' } }),
-      db.asset.count({ where: { status: 'Rosak' } }),
+      db.asset.count({ where: { status: 'AKTIF' as any } }),
+      db.asset.count({ where: { status: 'ROSAK' as any } }),
       db.profile.count({ where: { isActive: true } }),
-      db.profile.count({ where: { role: 'reporter', isActive: true } }),
-      db.profile.count({ where: { role: 'technician', isActive: true } }),
-      // Avg resolution time (placeholder, computed below)
-      Promise.resolve(null),
+      db.profile.count({ where: { role: Role.REPORTER, isActive: true } }),
+      db.profile.count({ where: { role: Role.TECHNICIAN, isActive: true } }),
       // Recent 10 complaints
       db.complaint.findMany({
-        where: user!.role === 'technician' ? { OR: [{ assignedTo: user!.id }, { reporterId: user!.id }] } : undefined,
+        where: userRole === 'technician' ? { OR: [{ assignedTo: user!.id }, { reporterId: user!.id }] } : undefined,
         include: {
           equipmentType: true,
           damageCategory: true,
@@ -103,7 +101,7 @@ export async function GET(req: NextRequest) {
       // Top damage types
       db.complaint.groupBy({
         by: ['damageCategoryId'],
-        where: { ...baseFilter, status: { in: ['Selesai', 'Ditutup'] } },
+        where: { ...baseFilter, status: { in: [ComplaintStatus.SELESAI, ComplaintStatus.DITUTUP] } },
         _count: true,
         orderBy: { _count: { damageCategoryId: 'desc' } },
         take: 5,
@@ -121,7 +119,7 @@ export async function GET(req: NextRequest) {
       }),
     ])
 
-    // Calculate avg resolution time manually (SQLite doesn't support date_diff in aggregate)
+    // Calculate avg resolution time manually
     const resolvedComplaints = await db.complaint.findMany({
       where: { ...baseFilter, resolvedAt: { not: null } },
       select: { createdAt: true, resolvedAt: true },
@@ -184,13 +182,20 @@ export async function GET(req: NextRequest) {
       const label = mStart.toLocaleDateString('ms-MY', { month: 'short', year: 'numeric' })
       const total = workLogs
         .filter((w) => w.loggedAt >= mStart && w.loggedAt < mEnd)
-        .reduce((sum, w) => sum + w.cost, 0)
+        .reduce((sum, w) => sum + Number(w.cost), 0)
       costByMonth.push({
         month: `${mStart.getFullYear()}-${String(mStart.getMonth() + 1).padStart(2, '0')}`,
         label,
         total: Math.round(total * 100) / 100,
       })
     }
+
+    // Serialize recent complaints (enums to strings)
+    const serializedRecent = recentComplaints.map((c) => ({
+      ...c,
+      status: fromComplaintStatus(c.status),
+      priority: fromPriority(c.priority),
+    }))
 
     return NextResponse.json({
       summary: {
@@ -201,7 +206,7 @@ export async function GET(req: NextRequest) {
         closed,
         onHold,
         totalWorkLogs,
-        totalCost: totalCost._sum.cost || 0,
+        totalCost: Number(totalCost._sum.cost || 0),
         totalAssets,
         activeAssets,
         damagedAssets,
@@ -212,14 +217,14 @@ export async function GET(req: NextRequest) {
         avgRating: ratingAvg._avg.reporterRating || 0,
         slaCompliance: totalComplaints > 0 ? Math.round(((resolved + closed) / totalComplaints) * 100) : 0,
       },
-      recentComplaints,
+      recentComplaints: serializedRecent,
       monthlyChart,
       costByMonth,
       byEquipment,
       byDamage,
       topDamages,
       byLocation: complaintsByLocation.map((c) => ({ name: c.location, count: c._count })),
-      priorityBreakdown: priorityBreakdown.map((p) => ({ name: p.priority, count: p._count })),
+      priorityBreakdown: priorityBreakdown.map((p) => ({ name: fromPriority(p.priority), count: p._count })),
     })
   } catch (e: any) {
     console.error('GET /api/dashboard/stats error:', e)

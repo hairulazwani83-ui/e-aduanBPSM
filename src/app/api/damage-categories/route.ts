@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requireAuth, sanitizeString } from '@/lib/security'
+import { toPriority, fromPriority } from '@/lib/enum-converters'
 
 // GET
 export async function GET() {
@@ -12,7 +13,12 @@ export async function GET() {
       orderBy: { name: 'asc' },
       include: { _count: { select: { complaints: true } } },
     })
-    return NextResponse.json({ damageCategories: cats })
+    // Serialize enum
+    const serialized = cats.map((c) => ({
+      ...c,
+      defaultPriority: fromPriority(c.defaultPriority),
+    }))
+    return NextResponse.json({ damageCategories: serialized })
   } catch (e: any) {
     return NextResponse.json({ error: 'Ralat pelayan' }, { status: 500 })
   }
@@ -36,11 +42,14 @@ export async function POST(req: NextRequest) {
       data: {
         name: sanitizeString(name, 200),
         description: description ? sanitizeString(description, 500) : null,
-        defaultPriority: priority,
+        defaultPriority: toPriority(priority),
       },
     })
 
-    return NextResponse.json({ success: true, damageCategory: cat })
+    return NextResponse.json({
+      success: true,
+      damageCategory: { ...cat, defaultPriority: fromPriority(cat.defaultPriority) },
+    })
   } catch (e: any) {
     return NextResponse.json({ error: 'Ralat pelayan' }, { status: 500 })
   }
@@ -61,11 +70,14 @@ export async function PATCH(req: NextRequest) {
     const update: any = {}
     if (name !== undefined) update.name = sanitizeString(name, 200)
     if (description !== undefined) update.description = sanitizeString(description, 500)
-    if (defaultPriority !== undefined && validPriorities.includes(defaultPriority)) update.defaultPriority = defaultPriority
+    if (defaultPriority !== undefined && validPriorities.includes(defaultPriority)) update.defaultPriority = toPriority(defaultPriority)
     if (isActive !== undefined) update.isActive = !!isActive
 
     const updated = await db.damageCategory.update({ where: { id }, data: update })
-    return NextResponse.json({ success: true, damageCategory: updated })
+    return NextResponse.json({
+      success: true,
+      damageCategory: { ...updated, defaultPriority: fromPriority(updated.defaultPriority) },
+    })
   } catch (e: any) {
     return NextResponse.json({ error: 'Ralat pelayan' }, { status: 500 })
   }

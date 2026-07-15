@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requireAuth } from '@/lib/security'
+import { Severity } from '@prisma/client'
 
 // GET audit logs (admin only)
 export async function GET(req: NextRequest) {
@@ -18,8 +19,15 @@ export async function GET(req: NextRequest) {
     const endDate = searchParams.get('endDate')
 
     const where: any = {}
-    if (action) where.action = { contains: action }
-    if (severity) where.severity = severity
+    if (action) where.action = { contains: action, mode: 'insensitive' }
+    if (severity) {
+      const sevMap: Record<string, Severity> = {
+        info: Severity.INFO,
+        warning: Severity.WARNING,
+        critical: Severity.CRITICAL,
+      }
+      if (sevMap[severity]) where.severity = sevMap[severity]
+    }
     if (userId) where.userId = userId
     if (startDate || endDate) {
       where.createdAt = {}
@@ -40,7 +48,14 @@ export async function GET(req: NextRequest) {
       db.auditLog.count({ where }),
     ])
 
-    return NextResponse.json({ logs, total, limit, offset })
+    // Serialize user role enum to lowercase string
+    const serialized = logs.map((l) => ({
+      ...l,
+      severity: l.severity.toLowerCase(),
+      user: l.user ? { ...l.user, role: String(l.user.role).toLowerCase() } : null,
+    }))
+
+    return NextResponse.json({ logs: serialized, total, limit, offset })
   } catch (e: any) {
     return NextResponse.json({ error: 'Ralat pelayan' }, { status: 500 })
   }

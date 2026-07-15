@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requireAuth } from '@/lib/security'
+import { serializeComplaint } from '@/lib/enum-converters'
 
-// GET: Search ticket by ticket number (public read - reporter can check status)
+// GET: Search ticket by ticket number
 export async function GET(req: NextRequest) {
   try {
     const { user, error } = await requireAuth()
@@ -35,11 +36,12 @@ export async function GET(req: NextRequest) {
     }
 
     // RBAC
-    if (user!.role === 'reporter' && complaint.reporterId !== user!.id) {
+    const userRole = user!.role as string
+    if (userRole === 'reporter' && complaint.reporterId !== user!.id) {
       return NextResponse.json({ error: 'Anda tidak mempunyai akses kepada tiket ini.' }, { status: 403 })
     }
 
-    return NextResponse.json({ complaint })
+    return NextResponse.json({ complaint: serializeComplaint(complaint) })
   } catch (e: any) {
     console.error('GET /api/complaints/search error:', e)
     return NextResponse.json({ error: 'Ralat pelayan' }, { status: 500 })

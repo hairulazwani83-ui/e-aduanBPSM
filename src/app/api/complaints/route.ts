@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { requireAuth, sanitizeString, logAudit, getClientIp, Role } from '@/lib/security'
+import { requireAuth, sanitizeString, logAudit, getClientIp } from '@/lib/security'
+import { toPriority, toComplaintStatus, serializeComplaint } from '@/lib/enum-converters'
 
 // POST: Create new complaint
 export async function POST(req: NextRequest) {
@@ -57,7 +58,6 @@ export async function POST(req: NextRequest) {
     // Sanitize
     const safeDesc = sanitizeString(description, 5000)
     const safeLoc = sanitizeString(location, 200)
-    const safePriority = ['Rendah', 'Sederhana', 'Tinggi', 'Kritikal'].includes(priority) ? priority : 'Sederhana'
 
     const complaint = await db.complaint.create({
       data: {
@@ -70,9 +70,9 @@ export async function POST(req: NextRequest) {
         aiSuggestedCategory: aiSuggestedCategory ? sanitizeString(aiSuggestedCategory, 200) : null,
         aiSuggestedPriority: aiSuggestedPriority ? sanitizeString(aiSuggestedPriority, 50) : null,
         aiSolution: aiSolution ? sanitizeString(aiSolution, 2000) : null,
-        priority: safePriority,
+        priority: toPriority(priority || 'Sederhana'),
         location: safeLoc,
-        status: 'Baru',
+        status: 'BARU' as any,
         attachmentUrl: attachmentUrl ? sanitizeString(attachmentUrl, 500) : null,
       },
       include: {
@@ -95,7 +95,7 @@ export async function POST(req: NextRequest) {
     })
 
     // Create notification for admins
-    const admins = await db.profile.findMany({ where: { role: 'admin', isActive: true } })
+    const admins = await db.profile.findMany({ where: { role: 'ADMIN' as any, isActive: true } })
     await Promise.all(
       admins.map((a) =>
         db.notification.create({
@@ -103,7 +103,7 @@ export async function POST(req: NextRequest) {
             userId: a.id,
             title: 'Aduan Baharu Diterima',
             message: `Tiket ${ticketNo}: ${safeDesc.slice(0, 80)}${safeDesc.length > 80 ? '...' : ''}`,
-            type: 'info',
+            type: 'INFO' as any,
             link: `/complaint/${complaint.id}`,
           },
         })
@@ -120,7 +120,7 @@ export async function POST(req: NextRequest) {
       severity: 'info',
     })
 
-    return NextResponse.json({ success: true, complaint })
+    return NextResponse.json({ success: true, complaint: serializeComplaint(complaint) })
   } catch (e: any) {
     console.error('POST /api/complaints error:', e)
     return NextResponse.json({ error: 'Ralat pelayan: ' + e.message }, { status: 500 })
@@ -146,21 +146,20 @@ export async function GET(req: NextRequest) {
     const startDate = searchParams.get('startDate')
     const endDate = searchParams.get('endDate')
 
-    // RBAC: reporters only see their own
+    // Build where clause
     const where: any = {}
+    // RBAC: reporters only see their own
     if (user!.role === 'reporter') {
       where.reporterId = user!.id
     } else if (user!.role === 'technician') {
-      // Technicians see assigned + their own
       where.OR = [
         { assignedTo: user!.id },
         { reporterId: user!.id },
       ]
     }
-    // admin and management see all
 
-    if (status) where.status = status
-    if (priority) where.priority = priority
+    if (status) where.status = toComplaintStatus(status)
+    if (priority) where.priority = toPriority(priority)
     if (equipmentTypeId) where.equipmentTypeId = equipmentTypeId
     if (damageCategoryId) where.damageCategoryId = damageCategoryId
     if (assignedTo) where.assignedTo = assignedTo
@@ -168,9 +167,9 @@ export async function GET(req: NextRequest) {
     if (search) {
       where.OR = [
         ...(where.OR || []),
-        { ticketNo: { contains: search } },
-        { description: { contains: search } },
-        { location: { contains: search } },
+        { ticketNo: { contains: search, mode: 'insensitive' } },
+        { description: { contains: search, mode: 'insensitive' } },
+        { location: { contains: search, mode: 'insensitive' } },
       ]
     }
     if (startDate || endDate) {
@@ -198,7 +197,10 @@ export async function GET(req: NextRequest) {
       db.complaint.count({ where }),
     ])
 
-    return NextResponse.json({ complaints, total, limit, offset })
+    // Serialize enums to frontend strings
+    const serialized = complaints.map(serializeComplaint)
+
+    return NextResponse.json({ complaints: serialized, total, limit, offset })
   } catch (e: any) {
     console.error('GET /api/complaints error:', e)
     return NextResponse.json({ error: 'Ralat pelayan: ' + e.message }, { status: 500 })

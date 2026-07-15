@@ -3,6 +3,7 @@
  * Sistem eAduan Kerosakan ICT - ADTEC JTM
  */
 import { getServerSession } from 'next-auth'
+import { Severity } from '@prisma/client'
 import { authOptions } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { NextRequest, NextResponse } from 'next/server'
@@ -19,6 +20,11 @@ export async function logAudit(params: {
   severity?: 'info' | 'warning' | 'critical'
 }) {
   try {
+    const sevMap: Record<string, Severity> = {
+      info: Severity.INFO,
+      warning: Severity.WARNING,
+      critical: Severity.CRITICAL,
+    }
     await db.auditLog.create({
       data: {
         userId: params.userId || null,
@@ -28,7 +34,7 @@ export async function logAudit(params: {
         details: params.details || null,
         ipAddress: params.ipAddress || null,
         userAgent: params.userAgent || null,
-        severity: params.severity || 'info',
+        severity: sevMap[params.severity || 'info'] || Severity.INFO,
       },
     })
   } catch (e) {

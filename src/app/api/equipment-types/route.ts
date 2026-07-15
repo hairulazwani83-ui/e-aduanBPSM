@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requireAuth, sanitizeString } from '@/lib/security'
+import { serializeEquipmentType, fromPriority, toPriority } from '@/lib/enum-converters'
 
 // GET all equipment types
 export async function GET() {
@@ -13,7 +14,7 @@ export async function GET() {
       include: { _count: { select: { assets: true, complaints: true } } },
     })
 
-    return NextResponse.json({ equipmentTypes: types })
+    return NextResponse.json({ equipmentTypes: types.map(serializeEquipmentType) })
   } catch (e: any) {
     console.error('GET /api/equipment-types error:', e)
     return NextResponse.json({ error: 'Ralat pelayan' }, { status: 500 })
@@ -48,7 +49,7 @@ export async function POST(req: NextRequest) {
       },
     })
 
-    return NextResponse.json({ success: true, equipmentType: type })
+    return NextResponse.json({ success: true, equipmentType: serializeEquipmentType(type) })
   } catch (e: any) {
     console.error('POST /api/equipment-types error:', e)
     return NextResponse.json({ error: 'Ralat pelayan' }, { status: 500 })
@@ -75,7 +76,7 @@ export async function PATCH(req: NextRequest) {
       },
     })
 
-    return NextResponse.json({ success: true, equipmentType: updated })
+    return NextResponse.json({ success: true, equipmentType: serializeEquipmentType(updated) })
   } catch (e: any) {
     console.error('PATCH /api/equipment-types error:', e)
     return NextResponse.json({ error: 'Ralat pelayan' }, { status: 500 })

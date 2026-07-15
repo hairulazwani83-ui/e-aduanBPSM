@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { requireAuth, sanitizeString, logAudit, getClientIp } from '@/lib/security'
+import { requireAuth } from '@/lib/security'
+import { serializeComplaint } from '@/lib/enum-converters'
 
 // GET single complaint by id
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -34,14 +35,26 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     }
 
     // RBAC check
-    if (user!.role === 'reporter' && complaint.reporterId !== user!.id) {
+    const userRole = user!.role as string
+    if (userRole === 'reporter' && complaint.reporterId !== user!.id) {
       return NextResponse.json({ error: 'Akses ditolak.' }, { status: 403 })
     }
-    if (user!.role === 'technician' && complaint.assignedTo !== user!.id && complaint.reporterId !== user!.id) {
+    if (userRole === 'technician' && complaint.assignedTo !== user!.id && complaint.reporterId !== user!.id) {
       return NextResponse.json({ error: 'Akses ditolak.' }, { status: 403 })
     }
 
-    return NextResponse.json({ complaint })
+    // Serialize the reporter role too
+    const serialized = {
+      ...serializeComplaint(complaint),
+      reporter: complaint.reporter ? { ...complaint.reporter, role: (complaint.reporter as any).role ? String((complaint.reporter as any).role).toLowerCase() : undefined } : complaint.reporter,
+      technician: complaint.technician ? { ...complaint.technician, role: (complaint.technician as any).role ? String((complaint.technician as any).role).toLowerCase() : undefined } : complaint.technician,
+      statusHistory: complaint.statusHistory.map((h: any) => ({
+        ...h,
+        changedBy: h.changedBy ? { ...h.changedBy, role: h.changedBy.role ? String(h.changedBy.role).toLowerCase() : h.changedBy.role } : h.changedBy,
+      })),
+    }
+
+    return NextResponse.json({ complaint: serialized })
   } catch (e: any) {
     console.error('GET /api/complaints/[id] error:', e)
     return NextResponse.json({ error: 'Ralat pelayan' }, { status: 500 })

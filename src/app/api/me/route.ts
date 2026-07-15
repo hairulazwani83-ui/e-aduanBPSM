@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/security'
 import { db } from '@/lib/db'
+import { fromRole } from '@/lib/enum-converters'
 
 export async function GET() {
   try {
@@ -35,7 +36,13 @@ export async function GET() {
       where: { userId: user.id, isRead: false },
     })
 
-    return NextResponse.json({ user: { ...profile, unreadCount } })
+    return NextResponse.json({
+      user: {
+        ...profile,
+        role: fromRole(profile.role),
+        unreadCount,
+      },
+    })
   } catch (e) {
     console.error('GET /api/me error:', e)
     return NextResponse.json({ error: 'Ralat pelayan' }, { status: 500 })

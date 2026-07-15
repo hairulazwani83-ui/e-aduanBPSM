@@ -1,44 +1,69 @@
 /**
  * Sistem eAduan Kerosakan ICT - ADTEC JTM Kampus Pasir Gudang
- * Seed Script - Comprehensive dummy data for demo/UAT
+ * Seed Script - PostgreSQL / Supabase version
+ * Uses native enums (uppercase) per Prisma schema
  */
-import { PrismaClient } from '@prisma/client'
+import { PrismaClient, Role, Priority, ComplaintStatus, AssetStatus, SuggestionCategory, SuggestionStatus, NotificationType, Severity } from '@prisma/client'
 import bcrypt from 'bcryptjs'
 
 const db = new PrismaClient()
 
-const DEPARTMENTS = [
-  'Unit ICT',
-  'Jabatan Elektrik',
-  'Jabatan Elektronik',
-  'Jabatan Mekanikal',
-  'Jabatan Pengajian Am',
-  'Pentadbiran',
-  'Hal Ehwal Pelajar',
-  'Perpustakaan',
+const LOCATIONS = [
+  'Blok A - Bilik Kuliah 1', 'Blok A - Bilik Kuliah 2', 'Blok A - Makmal Komputer 1', 'Blok A - Makmal Komputer 2',
+  'Blok B - Bengkel Elektrik', 'Blok B - Bengkel Elektronik', 'Blok B - Bengkel Mekanikal',
+  'Blok C - Pejabat Pentadbiran', 'Blok C - Bilik Staf',
+  'Blok D - Perpustakaan', 'Blok D - Bilik Pensyarah',
+  'Blok E - Makmal Rangkaian', 'Blok E - Pusat Komputer',
+  'Auditorium', 'Surau', 'Kafeteria',
 ]
 
-const LOCATIONS = [
-  'Blok A - Bilik Kuliah 1',
-  'Blok A - Bilik Kuliah 2',
-  'Blok A - Makmal Komputer 1',
-  'Blok A - Makmal Komputer 2',
-  'Blok B - Bengkel Elektrik',
-  'Blok B - Bengkel Elektronik',
-  'Blok B - Bengkel Mekanikal',
-  'Blok C - Pejabat Pentadbiran',
-  'Blok C - Bilik Staf',
-  'Blok D - Perpustakaan',
-  'Blok D - Bilik Pensyarah',
-  'Blok E - Makmal Rangkaian',
-  'Blok E - Pusat Komputer',
-  'Auditorium',
-  'Surau',
-  'Kafeteria',
-]
+// Malay → enum mapping
+const PRIORITY_MAP: Record<string, Priority> = {
+  'Rendah': Priority.RENDAH,
+  'Sederhana': Priority.SEDERHANA,
+  'Tinggi': Priority.TINGGI,
+  'Kritikal': Priority.KRITIKAL,
+}
+
+const STATUS_MAP: Record<string, ComplaintStatus> = {
+  'Baru': ComplaintStatus.BARU,
+  'Ditugaskan': ComplaintStatus.DITUGASKAN,
+  'Dalam Tindakan': ComplaintStatus.DALAM_TINDAKAN,
+  'On Hold': ComplaintStatus.ON_HOLD,
+  'Selesai': ComplaintStatus.SELESAI,
+  'Ditutup': ComplaintStatus.DITUTUP,
+}
+
+const STATUS_TO_STR: Record<ComplaintStatus, string> = {
+  [ComplaintStatus.BARU]: 'Baru',
+  [ComplaintStatus.DITUGASKAN]: 'Ditugaskan',
+  [ComplaintStatus.DALAM_TINDAKAN]: 'Dalam Tindakan',
+  [ComplaintStatus.ON_HOLD]: 'On Hold',
+  [ComplaintStatus.SELESAI]: 'Selesai',
+  [ComplaintStatus.DITUTUP]: 'Ditutup',
+}
+
+const ASSET_STATUS_MAP: Record<string, AssetStatus> = {
+  'Aktif': AssetStatus.AKTIF,
+  'Rosak': AssetStatus.ROSAK,
+  'Dilupus': AssetStatus.DILUPUS,
+}
+
+const SUGGESTION_CAT_MAP: Record<string, SuggestionCategory> = {
+  'Umum': SuggestionCategory.UMUM,
+  'Peningkatan': SuggestionCategory.PENINGKATAN,
+  'Aduan Perkhidmatan': SuggestionCategory.ADUAN_PERKHIDMATAN,
+}
+
+const SUGGESTION_STATUS_MAP: Record<string, SuggestionStatus> = {
+  'Baru': SuggestionStatus.BARU,
+  'Dalam Semakan': SuggestionStatus.DALAM_SEMAKAN,
+  'Dijawab': SuggestionStatus.DIJAWAB,
+}
 
 async function main() {
   console.log('🧹 Cleaning existing data...')
+  // Delete in dependency order (children first)
   await db.auditLog.deleteMany()
   await db.notification.deleteMany()
   await db.complaintRating.deleteMany()
@@ -71,70 +96,65 @@ async function main() {
       data: {
         name: 'Perkakasan (Hardware)',
         description: 'Tidak boleh hidup, bunyi bising, kerosakan fizikal, port rosak',
-        defaultPriority: 'Tinggi',
+        defaultPriority: Priority.TINGGI,
       },
     }),
     db.damageCategory.create({
       data: {
         name: 'Perisian (Software)',
         description: 'Sistem operasi hang/crash, ralat aplikasi, virus/malware',
-        defaultPriority: 'Sederhana',
+        defaultPriority: Priority.SEDERHANA,
       },
     }),
     db.damageCategory.create({
       data: {
         name: 'Rangkaian (Network)',
         description: 'Tiada sambungan internet, WiFi lemah/putus, IP conflict',
-        defaultPriority: 'Tinggi',
+        defaultPriority: Priority.TINGGI,
       },
     }),
     db.damageCategory.create({
       data: {
         name: 'Pencetakan (Printing)',
         description: 'Jem kertas, dakwat/toner habis, tidak dapat mencetak',
-        defaultPriority: 'Rendah',
+        defaultPriority: Priority.RENDAH,
       },
     }),
     db.damageCategory.create({
       data: {
         name: 'Paparan (Display)',
         description: 'Projektor tiada imej, warna pudar, lampu projektor rosak',
-        defaultPriority: 'Sederhana',
+        defaultPriority: Priority.SEDERHANA,
       },
     }),
     db.damageCategory.create({
       data: {
         name: 'Lain-lain',
         description: 'Kategori bebas untuk kes tidak standard',
-        defaultPriority: 'Rendah',
+        defaultPriority: Priority.RENDAH,
       },
     }),
   ])
-  const catByName = Object.fromEntries(damageCategories.map((c) => [c.name, c]))
 
   // ==================== Profiles (15 users with mixed roles) ====================
   console.log('👥 Seeding profiles...')
   const password = await bcrypt.hash('Password@123', 10)
   const usersData = [
-    // Admin (2)
-    { email: 'admin@adtecpg.edu.my', fullName: 'Mohd Aizat bin Rahman', staffId: 'ADT-ADMIN-001', department: 'Unit ICT', phone: '019-2345678', role: 'admin' },
-    { email: 'admin2@adtecpg.edu.my', fullName: 'Nurul Huda binti Ismail', staffId: 'ADT-ADMIN-002', department: 'Unit ICT', phone: '019-3456789', role: 'admin' },
-    // Technicians (3)
-    { email: 'tech1@adtecpg.edu.my', fullName: 'Ahmad Faizal bin Osman', staffId: 'ADT-TECH-001', department: 'Unit ICT', phone: '012-1112223', role: 'technician' },
-    { email: 'tech2@adtecpg.edu.my', fullName: 'Siti Aishah binti Yusof', staffId: 'ADT-TECH-002', department: 'Unit ICT', phone: '012-2223334', role: 'technician' },
-    { email: 'tech3@adtecpg.edu.my', fullName: 'Lim Wei Ming', staffId: 'ADT-TECH-003', department: 'Unit ICT', phone: '012-3334445', role: 'technician' },
-    // Management (2)
-    { email: 'mgmt@adtecpg.edu.my', fullName: 'Hj. Ramli bin Hassan', staffId: 'ADT-MGMT-001', department: 'Pentadbiran', phone: '013-1111111', role: 'management' },
-    { email: 'mgmt2@adtecpg.edu.my', fullName: 'Pn. Norhazliza binti Zakaria', staffId: 'ADT-MGMT-002', department: 'Pentadbiran', phone: '013-2222222', role: 'management' },
-    // Reporters (8)
-    { email: 'staff1@adtecpg.edu.my', fullName: 'Rajesh a/l Kumar', staffId: 'ADT-STF-001', department: 'Jabatan Elektrik', phone: '011-1234567', role: 'reporter' },
-    { email: 'staff2@adtecpg.edu.my', fullName: 'Fatimah binti Abdullah', staffId: 'ADT-STF-002', department: 'Jabatan Elektronik', phone: '011-2345678', role: 'reporter' },
-    { email: 'staff3@adtecpg.edu.my', fullName: 'Tan Chee Keong', staffId: 'ADT-STF-003', department: 'Jabatan Mekanikal', phone: '011-3456789', role: 'reporter' },
-    { email: 'staff4@adtecpg.edu.my', fullName: 'Aishah binti Mohamed', staffId: 'ADT-STF-004', department: 'Jabatan Pengajian Am', phone: '011-4567890', role: 'reporter' },
-    { email: 'staff5@adtecpg.edu.my', fullName: 'Kumar a/l Subramaniam', staffId: 'ADT-STF-005', department: 'Pentadbiran', phone: '011-5678901', role: 'reporter' },
-    { email: 'staff6@adtecpg.edu.my', fullName: 'Wong Mei Ling', staffId: 'ADT-STF-006', department: 'Hal Ehwal Pelajar', phone: '011-6789012', role: 'reporter' },
-    { email: 'staff7@adtecpg.edu.my', fullName: 'Mohd Hafiz bin Ibrahim', staffId: 'ADT-STF-007', department: 'Perpustakaan', phone: '011-7890123', role: 'reporter' },
-    { email: 'staff8@adtecpg.edu.my', fullName: 'Geetha a/p Raju', staffId: 'ADT-STF-008', department: 'Unit ICT', phone: '011-8901234', role: 'reporter' },
+    { email: 'admin@adtecpg.edu.my', fullName: 'Mohd Aizat bin Rahman', staffId: 'ADT-ADMIN-001', department: 'Unit ICT', phone: '019-2345678', role: Role.ADMIN },
+    { email: 'admin2@adtecpg.edu.my', fullName: 'Nurul Huda binti Ismail', staffId: 'ADT-ADMIN-002', department: 'Unit ICT', phone: '019-3456789', role: Role.ADMIN },
+    { email: 'tech1@adtecpg.edu.my', fullName: 'Ahmad Faizal bin Osman', staffId: 'ADT-TECH-001', department: 'Unit ICT', phone: '012-1112223', role: Role.TECHNICIAN },
+    { email: 'tech2@adtecpg.edu.my', fullName: 'Siti Aishah binti Yusof', staffId: 'ADT-TECH-002', department: 'Unit ICT', phone: '012-2223334', role: Role.TECHNICIAN },
+    { email: 'tech3@adtecpg.edu.my', fullName: 'Lim Wei Ming', staffId: 'ADT-TECH-003', department: 'Unit ICT', phone: '012-3334445', role: Role.TECHNICIAN },
+    { email: 'mgmt@adtecpg.edu.my', fullName: 'Hj. Ramli bin Hassan', staffId: 'ADT-MGMT-001', department: 'Pentadbiran', phone: '013-1111111', role: Role.MANAGEMENT },
+    { email: 'mgmt2@adtecpg.edu.my', fullName: 'Pn. Norhazliza binti Zakaria', staffId: 'ADT-MGMT-002', department: 'Pentadbiran', phone: '013-2222222', role: Role.MANAGEMENT },
+    { email: 'staff1@adtecpg.edu.my', fullName: 'Rajesh a/l Kumar', staffId: 'ADT-STF-001', department: 'Jabatan Elektrik', phone: '011-1234567', role: Role.REPORTER },
+    { email: 'staff2@adtecpg.edu.my', fullName: 'Fatimah binti Abdullah', staffId: 'ADT-STF-002', department: 'Jabatan Elektronik', phone: '011-2345678', role: Role.REPORTER },
+    { email: 'staff3@adtecpg.edu.my', fullName: 'Tan Chee Keong', staffId: 'ADT-STF-003', department: 'Jabatan Mekanikal', phone: '011-3456789', role: Role.REPORTER },
+    { email: 'staff4@adtecpg.edu.my', fullName: 'Aishah binti Mohamed', staffId: 'ADT-STF-004', department: 'Jabatan Pengajian Am', phone: '011-4567890', role: Role.REPORTER },
+    { email: 'staff5@adtecpg.edu.my', fullName: 'Kumar a/l Subramaniam', staffId: 'ADT-STF-005', department: 'Pentadbiran', phone: '011-5678901', role: Role.REPORTER },
+    { email: 'staff6@adtecpg.edu.my', fullName: 'Wong Mei Ling', staffId: 'ADT-STF-006', department: 'Hal Ehwal Pelajar', phone: '011-6789012', role: Role.REPORTER },
+    { email: 'staff7@adtecpg.edu.my', fullName: 'Mohd Hafiz bin Ibrahim', staffId: 'ADT-STF-007', department: 'Perpustakaan', phone: '011-7890123', role: Role.REPORTER },
+    { email: 'staff8@adtecpg.edu.my', fullName: 'Geetha a/p Raju', staffId: 'ADT-STF-008', department: 'Unit ICT', phone: '011-8901234', role: Role.REPORTER },
   ]
 
   const profiles = await Promise.all(
@@ -144,9 +164,9 @@ async function main() {
       })
     )
   )
-  const admins = profiles.filter((p) => p.role === 'admin')
-  const technicians = profiles.filter((p) => p.role === 'technician')
-  const reporters = profiles.filter((p) => p.role === 'reporter')
+  const admins = profiles.filter((p) => p.role === Role.ADMIN)
+  const technicians = profiles.filter((p) => p.role === Role.TECHNICIAN)
+  const reporters = profiles.filter((p) => p.role === Role.REPORTER)
 
   // ==================== Assets (40 records) ====================
   console.log('🖨️  Seeding assets...')
@@ -164,10 +184,10 @@ async function main() {
   for (let i = 0; i < 40; i++) {
     const eqCodes = Object.keys(brands)
     const eqCode = eqCodes[i % eqCodes.length]
-    const brandList = brands[eqCode]
+    const brandList = brands[eqCode as keyof typeof brands]
     const brandModel = brandList[i % brandList.length]
     const location = LOCATIONS[i % LOCATIONS.length]
-    const status = assetStatuses[i % assetStatuses.length]
+    const statusStr = assetStatuses[i % assetStatuses.length]
     const asset = await db.asset.create({
       data: {
         assetTag: `AST-${String(i + 1).padStart(4, '0')}`,
@@ -175,19 +195,19 @@ async function main() {
         brandModel,
         location,
         purchaseDate: new Date(2020 + (i % 5), i % 12, (i % 28) + 1),
-        status,
+        status: ASSET_STATUS_MAP[statusStr],
       },
     })
     assets.push(asset)
   }
 
-  // ==================== Complaints (80-100 records spread across 6 months) ====================
+  // ==================== Complaints (95 records) ====================
   console.log('🎫 Seeding complaints...')
   const statuses = ['Baru', 'Ditugaskan', 'Dalam Tindakan', 'On Hold', 'Selesai', 'Ditutup']
   const priorities = ['Rendah', 'Sederhana', 'Tinggi', 'Kritikal']
   const statusWeights = [10, 15, 20, 5, 25, 25]
 
-  const descriptions = {
+  const descriptions: Record<string, string[]> = {
     'Perkakasan (Hardware)': [
       'Komputer tidak dapat dihidupkan. Tiada lampu indicator pada CPU.',
       'Monitor tidak papar apa-apa walaupun CPU hidup. Cable sudah diperiksa.',
@@ -274,18 +294,18 @@ async function main() {
 
     const weightTotal = statusWeights.reduce((a, b) => a + b, 0)
     let r = Math.random() * weightTotal
-    let status = 'Baru'
+    let statusStr = 'Baru'
     for (let j = 0; j < statuses.length; j++) {
       r -= statusWeights[j]
-      if (r <= 0) { status = statuses[j]; break }
+      if (r <= 0) { statusStr = statuses[j]; break }
     }
 
-    const priority = category.defaultPriority === 'Kritikal' ? 'Kritikal' : priorities[Math.floor(Math.random() * priorities.length)]
+    const priorityStr = Math.random() > 0.7 ? priorities[Math.floor(Math.random() * priorities.length)] : (category.defaultPriority === Priority.KRITIKAL ? 'Kritikal' : priorities[Math.floor(Math.random() * priorities.length)])
 
-    const technician = (status !== 'Baru') ? technicians[Math.floor(Math.random() * technicians.length)] : null
+    const technician = (statusStr !== 'Baru') ? technicians[Math.floor(Math.random() * technicians.length)] : null
     const assignedAt = technician ? new Date(monthDate.getTime() + 3600000 * 2) : null
-    const resolvedAt = (status === 'Selesai' || status === 'Ditutup') ? new Date(monthDate.getTime() + 3600000 * 24 * (1 + Math.floor(Math.random() * 5))) : null
-    const closedAt = status === 'Ditutup' ? new Date((resolvedAt || monthDate).getTime() + 3600000 * 24) : null
+    const resolvedAt = (statusStr === 'Selesai' || statusStr === 'Ditutup') ? new Date(monthDate.getTime() + 3600000 * 24 * (1 + Math.floor(Math.random() * 5))) : null
+    const closedAt = statusStr === 'Ditutup' ? new Date((resolvedAt || monthDate).getTime() + 3600000 * 24) : null
 
     const location = asset?.location || LOCATIONS[Math.floor(Math.random() * LOCATIONS.length)]
 
@@ -298,29 +318,30 @@ async function main() {
         damageCategoryId: category.id,
         description,
         aiSuggestedCategory: category.name,
-        aiSuggestedPriority: priority,
+        aiSuggestedPriority: priorityStr,
         aiSolution: 'Sila semak sambungan kabel dan restart peranti terlebih dahulu.',
-        priority,
+        priority: PRIORITY_MAP[priorityStr],
         location,
-        status,
+        status: STATUS_MAP[statusStr],
         assignedTo: technician?.id || null,
         assignedAt,
         resolvedAt,
         closedAt,
-        reporterRating: (status === 'Selesai' || status === 'Ditutup') ? (3 + Math.floor(Math.random() * 3)) : null,
-        reporterFeedback: (status === 'Ditutup' && Math.random() > 0.5) ? 'Pelayanan baik dan pantas.' : null,
+        reporterRating: (statusStr === 'Selesai' || statusStr === 'Ditutup') ? (3 + Math.floor(Math.random() * 3)) : null,
+        reporterFeedback: (statusStr === 'Ditutup' && Math.random() > 0.5) ? 'Pelayanan baik dan pantas.' : null,
         createdAt: monthDate,
         updatedAt: resolvedAt || monthDate,
       },
     })
     complaints.push(complaint)
 
-    const history = [{ status: 'Baru', date: monthDate }]
-    if (technician) history.push({ status: 'Ditugaskan', date: assignedAt })
-    if (status === 'Dalam Tindakan' || ['On Hold', 'Selesai', 'Ditutup'].includes(status)) {
+    // Status history entries
+    const history: { status: string; date: Date }[] = [{ status: 'Baru', date: monthDate }]
+    if (technician) history.push({ status: 'Ditugaskan', date: assignedAt! })
+    if (statusStr === 'Dalam Tindakan' || ['On Hold', 'Selesai', 'Ditutup'].includes(statusStr)) {
       history.push({ status: 'Dalam Tindakan', date: new Date((assignedAt || monthDate).getTime() + 3600000 * 3) })
     }
-    if (status === 'On Hold') {
+    if (statusStr === 'On Hold') {
       history.push({ status: 'On Hold', date: new Date((assignedAt || monthDate).getTime() + 3600000 * 24) })
     }
     if (resolvedAt) history.push({ status: 'Selesai', date: resolvedAt })
@@ -340,6 +361,7 @@ async function main() {
       })
     }
 
+    // Work logs for resolved/closed
     if (resolvedAt) {
       const workActions = [
         'Pemeriksaan awal dibuat. Mendapati komponen rosak dan diganti.',
@@ -357,7 +379,7 @@ async function main() {
         await db.workLog.create({
           data: {
             complaintId: complaint.id,
-            technicianId: technician.id,
+            technicianId: technician!.id,
             actionTaken: workActions[Math.floor(Math.random() * workActions.length)],
             cost: 10 + Math.floor(Math.random() * 491),
             spareParts: Math.random() > 0.6 ? 'Kabel HDMI, Thermal Paste, SSD 256GB' : null,
@@ -392,8 +414,8 @@ async function main() {
         submittedById: submittedBy.id,
         subject: s.subject,
         message: s.message,
-        category: s.category,
-        status: isAnswered ? 'Dijawab' : (i < 8 ? 'Dalam Semakan' : 'Baru'),
+        category: SUGGESTION_CAT_MAP[s.category],
+        status: isAnswered ? SuggestionStatus.DIJAWAB : (i < 8 ? SuggestionStatus.DALAM_SEMAKAN : SuggestionStatus.BARU),
         adminResponse: isAnswered ? 'Terima kasih atas cadangan. Pihak Unit ICT akan mengkaji dan tindakan akan diambil dalam tempoh yang sesuai.' : null,
         createdAt: submittedAt,
         respondedAt: isAnswered ? new Date(submittedAt.getTime() + 24 * 3600000) : null,
@@ -409,7 +431,7 @@ async function main() {
         userId: u.id,
         title: 'Selamat Datang ke Sistem eAduan Kerosakan ICT',
         message: 'Sistem siap digunakan. Sila hubungi Unit ICT jika ada pertanyaan.',
-        type: 'info',
+        type: NotificationType.INFO,
         isRead: false,
       },
     })
@@ -425,7 +447,7 @@ async function main() {
         entity: 'auth',
         details: 'Log masuk berjaya',
         ipAddress: '192.168.1.' + (Math.floor(Math.random() * 200) + 10),
-        severity: 'info',
+        severity: Severity.INFO,
         createdAt: new Date(now.getTime() - Math.floor(Math.random() * 7 * 24 * 3600000)),
       },
     })
@@ -437,7 +459,7 @@ async function main() {
       entity: 'auth',
       details: 'Percubaan log masuk gagal dari IP tidak dikenali',
       ipAddress: '203.45.67.89',
-      severity: 'warning',
+      severity: Severity.WARNING,
       createdAt: new Date(now.getTime() - 3600000),
     },
   })

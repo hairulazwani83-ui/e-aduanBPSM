@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requireAuth, sanitizeString, logAudit, getClientIp } from '@/lib/security'
+import { SuggestionStatus, NotificationType, Severity } from '@prisma/client'
+import { serializeSuggestion } from '@/lib/enum-converters'
 
 // PATCH: Admin responds to a suggestion
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -21,8 +23,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       return NextResponse.json({ error: 'Cadangan tidak dijumpai.' }, { status: 404 })
     }
 
-    const validStatus = ['Baru', 'Dalam Semakan', 'Dijawab']
-    const newStatus = validStatus.includes(status) ? status : 'Dijawab'
+    const validStatuses: Record<string, SuggestionStatus> = {
+      'Baru': SuggestionStatus.BARU,
+      'Dalam Semakan': SuggestionStatus.DALAM_SEMAKAN,
+      'Dijawab': SuggestionStatus.DIJAWAB,
+    }
+    const newStatus = (status && validStatuses[status]) || SuggestionStatus.DIJAWAB
 
     const updated = await db.suggestion.update({
       where: { id },
@@ -42,7 +48,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         userId: suggestion.submittedById,
         title: 'Cadangan Anda Telah Dijawab',
         message: `Cadangan "${suggestion.subject}" telah diberi respons oleh Admin.`,
-        type: 'success',
+        type: NotificationType.SUCCESS,
       },
     })
 
@@ -53,10 +59,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       entityId: id,
       details: `Respons kepada cadangan "${suggestion.subject}"`,
       ipAddress: getClientIp(req),
-      severity: 'info',
+      severity: Severity.INFO,
     })
 
-    return NextResponse.json({ success: true, suggestion: updated })
+    return NextResponse.json({ success: true, suggestion: serializeSuggestion(updated) })
   } catch (e: any) {
     return NextResponse.json({ error: 'Ralat pelayan' }, { status: 500 })
   }

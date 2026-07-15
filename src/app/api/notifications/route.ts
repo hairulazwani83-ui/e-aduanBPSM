@@ -20,7 +20,10 @@ export async function GET(req: NextRequest) {
       take: 50,
     })
 
-    return NextResponse.json({ notifications })
+    // Serialize type enum
+    const serialized = notifications.map((n) => ({ ...n, type: n.type.toLowerCase() }))
+
+    return NextResponse.json({ notifications: serialized })
   } catch (e: any) {
     return NextResponse.json({ error: 'Ralat pelayan' }, { status: 500 })
   }

@@ -113,7 +113,7 @@ export const authOptions: NextAuthOptions = {
           id: profile.id,
           email: profile.email,
           name: profile.fullName,
-          role: profile.role,
+          role: String(profile.role).toLowerCase(),
           staffId: profile.staffId,
           department: profile.department,
         } as any

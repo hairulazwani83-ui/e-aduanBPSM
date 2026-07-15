@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requireAuth, sanitizeString, logAudit, getClientIp } from '@/lib/security'
+import { Severity } from '@prisma/client'
 
 // POST: Add work log entry (technician only)
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -21,8 +22,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: 'Tiket tidak dijumpai.' }, { status: 404 })
     }
 
+    const userRole = user!.role as string
     // Only assigned technician or admin can add work logs
-    if (user!.role === 'technician' && complaint.assignedTo !== user!.id) {
+    if (userRole === 'technician' && complaint.assignedTo !== user!.id) {
       return NextResponse.json({ error: 'Anda tidak ditugaskan untuk tiket ini.' }, { status: 403 })
     }
 
@@ -50,10 +52,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       entityId: workLog.id,
       details: `Work log added to ${complaint.ticketNo}: RM${safeCost.toFixed(2)}`,
       ipAddress: getClientIp(req),
-      severity: 'info',
+      severity: Severity.INFO,
     })
 
-    return NextResponse.json({ success: true, workLog })
+    // Return with serialized cost
+    return NextResponse.json({ success: true, workLog: { ...workLog, cost: Number(workLog.cost) } })
   } catch (e: any) {
     console.error('POST /api/complaints/[id]/work-logs error:', e)
     return NextResponse.json({ error: 'Ralat pelayan' }, { status: 500 })

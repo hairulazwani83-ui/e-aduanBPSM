@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requireAuth, sanitizeString, logAudit, getClientIp } from '@/lib/security'
+import { SuggestionCategory, SuggestionStatus, NotificationType, Severity, Role } from '@prisma/client'
+import { fromSuggestionCategory, fromSuggestionStatus, serializeSuggestion } from '@/lib/enum-converters'
 
 // GET suggestions
 export async function GET(req: NextRequest) {
@@ -16,7 +18,14 @@ export async function GET(req: NextRequest) {
     if (user!.role === 'reporter') {
       where.submittedById = user!.id
     }
-    if (status) where.status = status
+    if (status) {
+      const statusMap: Record<string, SuggestionStatus> = {
+        'Baru': SuggestionStatus.BARU,
+        'Dalam Semakan': SuggestionStatus.DALAM_SEMAKAN,
+        'Dijawab': SuggestionStatus.DIJAWAB,
+      }
+      if (statusMap[status]) where.status = statusMap[status]
+    }
 
     const suggestions = await db.suggestion.findMany({
       where,
@@ -27,7 +36,7 @@ export async function GET(req: NextRequest) {
       take: 200,
     })
 
-    return NextResponse.json({ suggestions })
+    return NextResponse.json({ suggestions: suggestions.map(serializeSuggestion) })
   } catch (e: any) {
     return NextResponse.json({ error: 'Ralat pelayan' }, { status: 500 })
   }
@@ -50,8 +59,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Mesej mesti sekurang-kurangnya 10 aksara.' }, { status: 400 })
     }
 
-    const validCats = ['Umum', 'Peningkatan', 'Aduan Perkhidmatan']
-    const cat = validCats.includes(category) ? category : 'Umum'
+    const validCats: Record<string, SuggestionCategory> = {
+      'Umum': SuggestionCategory.UMUM,
+      'Peningkatan': SuggestionCategory.PENINGKATAN,
+      'Aduan Perkhidmatan': SuggestionCategory.ADUAN_PERKHIDMATAN,
+    }
+    const cat = validCats[category] || SuggestionCategory.UMUM
 
     const suggestion = await db.suggestion.create({
       data: {
@@ -66,7 +79,7 @@ export async function POST(req: NextRequest) {
     })
 
     // Notify admins
-    const admins = await db.profile.findMany({ where: { role: 'admin', isActive: true } })
+    const admins = await db.profile.findMany({ where: { role: Role.ADMIN, isActive: true } })
     await Promise.all(
       admins.map((a) =>
         db.notification.create({
@@ -74,13 +87,13 @@ export async function POST(req: NextRequest) {
             userId: a.id,
             title: 'Cadangan/Syor Baharu',
             message: `${user!.name} menghantar cadangan: ${subject}`,
-            type: 'info',
+            type: NotificationType.INFO,
           },
         })
       )
     )
 
-    return NextResponse.json({ success: true, suggestion })
+    return NextResponse.json({ success: true, suggestion: serializeSuggestion(suggestion) })
   } catch (e: any) {
     return NextResponse.json({ error: 'Ralat pelayan' }, { status: 500 })
   }

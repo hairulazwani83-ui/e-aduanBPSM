@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
       }),
     ])
 
-    const totalCost = workLogs.reduce((sum, w) => sum + w.cost, 0)
+    const totalCost = workLogs.reduce((sum, w) => sum + Number(w.cost), 0)
     const byCat: Record<string, number> = {}
     const byLoc: Record<string, number> = {}
     complaints.forEach((c) => {
@@ -60,12 +60,13 @@ export async function POST(req: NextRequest) {
     const topCat = Object.entries(byCat).sort((a, b) => b[1] - a[1])[0]
     const topLoc = Object.entries(byLoc).sort((a, b) => b[1] - a[1])[0]
     const pctChange = prevComplaints > 0 ? Math.round(((complaints.length - prevComplaints) / prevComplaints) * 100) : 0
+    const totalCostNum = Number(totalCost)
 
     const summaryData = `Bulan: ${startDate.toLocaleDateString('ms-MY', { month: 'long', year: 'numeric' })}
 Bilangan aduan: ${complaints.length} (${pctChange >= 0 ? '+' : ''}${pctChange}% berbanding bulan lepas)
 Kategori paling banyak: ${topCat ? topCat[0] + ' (' + topCat[1] + ' kes)' : 'Tiada'}
 Lokasi paling bermasalah: ${topLoc ? topLoc[0] + ' (' + topLoc[1] + ' kes)' : 'Tiada'}
-Jumlah kos penyelenggaraan: RM${totalCost.toFixed(2)}`
+Jumlah kos penyelenggaraan: RM${totalCostNum.toFixed(2)}`
 
     const prompt = `Anda adalah asisten AI untuk Unit ICT ADTEC JTM. Berdasarkan data statistik berikut, jana ringkasan naratif pendek (3-5 ayat) dalam Bahasa Melayu yang menyerlahkan trend utama, perbandingan dengan bulan lepas, dan cadangan tindakan. Gunakan format profesional untuk laporan pengurusan.
 
@@ -94,13 +95,13 @@ ${summaryData}`
           pctChange,
           topCategory: topCat ? topCat[0] : null,
           topLocation: topLoc ? topLoc[0] : null,
-          totalCost,
+          totalCost: totalCostNum,
         },
       })
     } catch (aiErr) {
       console.error('AI summary error:', aiErr)
       // Fallback template
-      const fallback = `Pada ${startDate.toLocaleDateString('ms-MY', { month: 'long', year: 'numeric' })}, sebanyak ${complaints.length} aduan kerosakan ICT diterima${pctChange !== 0 ? `, ${pctChange > 0 ? 'meningkat' : 'menurun'} ${Math.abs(pctChange)}% berbanding bulan lepas` : ''}. ${topCat ? `Kategori kerosakan paling tinggi ialah ${topCat[0]} dengan ${topCat[1]} kes.` : ''} ${topLoc ? `Lokasi paling banyak melaporkan kerosakan ialah ${topLoc[0]} (${topLoc[1]} kes).` : ''} Jumlah kos penyelenggaraan kendiri bulan ini ialah RM${totalCost.toFixed(2)}. Cadangan: tumpukan sumber pemantauan dan pencegahan kepada kategori dan lokasi yang paling kritikal untuk mengurangkan aduan pada bulan akan datang.`
+      const fallback = `Pada ${startDate.toLocaleDateString('ms-MY', { month: 'long', year: 'numeric' })}, sebanyak ${complaints.length} aduan kerosakan ICT diterima${pctChange !== 0 ? `, ${pctChange > 0 ? 'meningkat' : 'menurun'} ${Math.abs(pctChange)}% berbanding bulan lepas` : ''}. ${topCat ? `Kategori kerosakan paling tinggi ialah ${topCat[0]} dengan ${topCat[1]} kes.` : ''} ${topLoc ? `Lokasi paling banyak melaporkan kerosakan ialah ${topLoc[0]} (${topLoc[1]} kes).` : ''} Jumlah kos penyelenggaraan kendiri bulan ini ialah RM${totalCostNum.toFixed(2)}. Cadangan: tumpukan sumber pemantauan dan pencegahan kepada kategori dan lokasi yang paling kritikal untuk mengurangkan aduan pada bulan akan datang.`
 
       return NextResponse.json({
         success: true,
@@ -111,7 +112,7 @@ ${summaryData}`
           pctChange,
           topCategory: topCat ? topCat[0] : null,
           topLocation: topLoc ? topLoc[0] : null,
-          totalCost,
+          totalCost: totalCostNum,
         },
       })
     }

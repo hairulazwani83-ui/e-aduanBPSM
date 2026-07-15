@@ -1,25 +1,27 @@
 // Sistem eAduan Kerosakan ICT - ADTEC JTM Kampus Pasir Gudang
-// Prisma Schema (SQLite for development; production would use PostgreSQL via Supabase)
+// Prisma Schema - PostgreSQL (Supabase)
+// Native UUID PKs, enums, and cascade deletes for production-grade schema
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 // ==================== User / Profile ====================
 model Profile {
-  id           String   @id @default(cuid())
+  id           String   @id @default(uuid()) @db.Uuid
   email        String   @unique
   passwordHash String
   fullName     String
   staffId      String
   department   String
   phone        String?
-  role         String   @default("reporter") // reporter | technician | admin | management
+  role         Role     @default(REPORTER)
   isActive     Boolean  @default(true)
   failedLoginAttempts Int @default(0)
   lockedUntil  DateTime?
@@ -42,11 +44,11 @@ model Profile {
 
 // ==================== Equipment Types ====================
 model EquipmentType {
-  id        String  @id @default(cuid())
-  code      String  @unique // EQ-01, EQ-02, ...
+  id        String   @id @default(uuid()) @db.Uuid
+  code      String   @unique // EQ-01, EQ-02, ...
   name      String
-  icon      String  @default("Monitor")
-  isActive  Boolean @default(true)
+  icon      String   @default("Monitor")
+  isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
 
   assets     Asset[]
@@ -57,11 +59,11 @@ model EquipmentType {
 
 // ==================== Damage Categories ====================
 model DamageCategory {
-  id              String  @id @default(cuid())
+  id              String   @id @default(uuid()) @db.Uuid
   name            String
   description     String?
-  defaultPriority String  @default("Sederhana") // Rendah | Sederhana | Tinggi | Kritikal
-  isActive        Boolean @default(true)
+  defaultPriority Priority @default(SEDERHANA)
+  isActive        Boolean  @default(true)
   createdAt       DateTime @default(now())
 
   complaints Complaint[]
@@ -71,13 +73,13 @@ model DamageCategory {
 
 // ==================== Assets (ICT equipment records) ====================
 model Asset {
-  id               String       @id @default(cuid())
+  id               String       @id @default(uuid()) @db.Uuid
   assetTag         String       @unique
-  equipmentTypeId  String
+  equipmentTypeId  String       @db.Uuid
   brandModel       String
   location         String
   purchaseDate     DateTime?
-  status           String       @default("Aktif") // Aktif | Rosak | Dilupus
+  status           AssetStatus  @default(AKTIF)
   notes            String?
   createdAt        DateTime     @default(now())
   updatedAt        DateTime     @updatedAt
@@ -92,25 +94,25 @@ model Asset {
 
 // ==================== Complaints (tickets) ====================
 model Complaint {
-  id                  String    @id @default(cuid())
-  ticketNo            String    @unique // ADT-PG-YYYYMM-XXXX
-  reporterId          String
-  equipmentTypeId     String
-  assetId             String?
-  damageCategoryId    String
+  id                  String        @id @default(uuid()) @db.Uuid
+  ticketNo            String        @unique // ADT-PG-YYYYMM-XXXX
+  reporterId          String        @db.Uuid
+  equipmentTypeId     String        @db.Uuid
+  assetId             String?       @db.Uuid
+  damageCategoryId    String        @db.Uuid
   description         String
   aiSuggestedCategory String?
   aiSuggestedPriority String?
   aiSolution          String?
-  priority            String    @default("Sederhana") // Rendah | Sederhana | Tinggi | Kritikal
+  priority            Priority      @default(SEDERHANA)
   location            String
-  status              String    @default("Baru") // Baru | Ditugaskan | Dalam Tindakan | On Hold | Selesai | Ditutup
-  assignedTo          String?
+  status              ComplaintStatus @default(BARU)
+  assignedTo          String?       @db.Uuid
   attachmentUrl       String?
   reporterRating      Int?
   reporterFeedback    String?
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
   assignedAt          DateTime?
   resolvedAt          DateTime?
   closedAt            DateTime?
@@ -135,11 +137,11 @@ model Complaint {
 
 // ==================== Work Logs (maintenance work & costs) ====================
 model WorkLog {
-  id           String   @id @default(cuid())
-  complaintId  String
-  technicianId String
+  id           String   @id @default(uuid()) @db.Uuid
+  complaintId  String   @db.Uuid
+  technicianId String   @db.Uuid
   actionTaken  String
-  cost         Float    @default(0)
+  cost         Decimal  @default(0) @db.Decimal(10, 2)
   spareParts   String?
   loggedAt     DateTime @default(now())
 
@@ -153,11 +155,11 @@ model WorkLog {
 
 // ==================== Status History (audit trail) ====================
 model StatusHistory {
-  id          String   @id @default(cuid())
-  complaintId String
+  id          String   @id @default(uuid()) @db.Uuid
+  complaintId String   @db.Uuid
   oldStatus   String?
   newStatus   String
-  changedById String
+  changedById String   @db.Uuid
   note        String?
   changedAt   DateTime @default(now())
 
@@ -170,14 +172,14 @@ model StatusHistory {
 
 // ==================== Suggestions (user feedback) ====================
 model Suggestion {
-  id            String   @id @default(cuid())
-  submittedById String
+  id            String              @id @default(uuid()) @db.Uuid
+  submittedById String              @db.Uuid
   subject       String
   message       String
-  category      String   @default("Umum") // Umum | Peningkatan | Aduan Perkhidmatan
+  category      SuggestionCategory  @default(UMUM)
   adminResponse String?
-  status        String   @default("Baru") // Baru | Dalam Semakan | Dijawab
-  createdAt     DateTime @default(now())
+  status        SuggestionStatus    @default(BARU)
+  createdAt     DateTime            @default(now())
   respondedAt   DateTime?
 
   submittedBy Profile @relation(fields: [submittedById], references: [id])
@@ -188,11 +190,11 @@ model Suggestion {
 
 // ==================== Notifications ====================
 model Notification {
-  id        String   @id @default(cuid())
-  userId    String
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
   title     String
   message   String
-  type      String   @default("info") // info | success | warning | error
+  type      NotificationType @default(INFO)
   isRead    Boolean  @default(false)
   link      String?
   createdAt DateTime @default(now())
@@ -205,9 +207,9 @@ model Notification {
 
 // ==================== Complaint Ratings ====================
 model ComplaintRating {
-  id           String   @id @default(cuid())
-  complaintId  String
-  userId       String
+  id           String   @id @default(uuid()) @db.Uuid
+  complaintId  String   @db.Uuid
+  userId       String   @db.Uuid
   rating       Int // 1-5
   feedback     String?
   createdAt    DateTime @default(now())
@@ -221,15 +223,15 @@ model ComplaintRating {
 
 // ==================== Audit Log (security & integrity) ====================
 model AuditLog {
-  id        String   @id @default(cuid())
-  userId    String?
-  action    String // e.g. LOGIN, LOGOUT, CREATE_COMPLAINT, UPDATE_STATUS, DELETE_USER
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String?  @db.Uuid
+  action    String
   entity    String?
   entityId  String?
   details   String?
   ipAddress String?
   userAgent String?
-  severity  String   @default("info") // info | warning | critical
+  severity  Severity @default(INFO)
   createdAt DateTime @default(now())
 
   user Profile? @relation(fields: [userId], references: [id])
@@ -238,4 +240,59 @@ model AuditLog {
   @@index([action])
   @@index([createdAt])
   @@index([severity])
+}
+
+// ==================== Enums ====================
+enum Role {
+  REPORTER
+  TECHNICIAN
+  ADMIN
+  MANAGEMENT
+}
+
+enum Priority {
+  RENDAH
+  SEDERHANA
+  TINGGI
+  KRITIKAL
+}
+
+enum ComplaintStatus {
+  BARU
+  DITUGASKAN
+  DALAM_TINDAKAN
+  ON_HOLD
+  SELESAI
+  DITUTUP
+}
+
+enum AssetStatus {
+  AKTIF
+  ROSAK
+  DILUPUS
+}
+
+enum SuggestionCategory {
+  UMUM
+  PENINGKATAN
+  ADUAN_PERKHIDMATAN
+}
+
+enum SuggestionStatus {
+  BARU
+  DALAM_SEMAKAN
+  DIJAWAB
+}
+
+enum NotificationType {
+  INFO
+  SUCCESS
+  WARNING
+  ERROR
+}
+
+enum Severity {
+  INFO
+  WARNING
+  CRITICAL
 }
